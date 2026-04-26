@@ -20,3 +20,8 @@ kembali_*.txt
 .vscode/
 .idea/
 .DS_Store
+
+#PyInstaller
+build/
+dist/
+*.spec
