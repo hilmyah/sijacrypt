@@ -4,39 +4,61 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 func processFile(inputFile, outputFile, password, mode string) {
-	// Membaca file sebagai binary
 	data, err := os.ReadFile(inputFile)
 	if err != nil {
 		fmt.Println("[-] Error membaca file:", err)
 		return
 	}
 
-	// Lapis 1: Key Expansion menggunakan SHA-256 bawaan Go
 	keyHash := sha256.Sum256([]byte(password))
-	processedData := make([]byte, len(data))
+	var payload []byte
 
-	for i := 0; i < len(data); i++ {
+	if mode == "enc" {
+		ext := filepath.Ext(inputFile)
+		extBytes := []byte(ext)
+		payload = append([]byte{byte(len(extBytes))}, extBytes...)
+		payload = append(payload, data...)
+	} else {
+		payload = data
+	}
+
+	processedData := make([]byte, len(payload))
+	for i := 0; i < len(payload); i++ {
 		if mode == "enc" {
-			// Lapis 2 & 3: Shift (ditambah index) lalu XOR
-			shiftedByte := byte((int(data[i]) + i) % 256)
+			shiftedByte := byte((int(payload[i]) + i) % 256)
 			processedData[i] = shiftedByte ^ keyHash[i%32]
 		} else if mode == "dec" {
-			// Kebalikan Lapis 3 & 2: Buka XOR lalu Un-Shift
-			unshiftedByte := data[i] ^ keyHash[i%32]
+			unshiftedByte := payload[i] ^ keyHash[i%32]
 			processedData[i] = unshiftedByte - byte(i%256)
 		}
 	}
 
-	// Menyimpan file output
-	err = os.WriteFile(outputFile, processedData, 0644)
+	var finalOutput string
+	var outputData []byte
+
+	if mode == "enc" {
+		finalOutput = strings.TrimSuffix(inputFile, filepath.Ext(inputFile)) + ".sija"
+		outputData = processedData
+		fmt.Println("[+] Proses ENKRIPSI Lapis 3 Berhasil!")
+	} else {
+		extLen := processedData[0]
+		originalExt := string(processedData[1 : 1+extLen])
+		outputData = processedData[1+extLen:]
+		finalOutput = strings.TrimSuffix(inputFile, ".sija") + "_recovered" + originalExt
+		fmt.Println("[+] Proses DEKRIPSI Berhasil, data dikembalikan!")
+	}
+
+	err = os.WriteFile(finalOutput, outputData, 0644)
 	if err != nil {
 		fmt.Println("[-] Error menyimpan file:", err)
 		return
 	}
-	fmt.Printf("[+] Berhasil! Output tersimpan di: %s\n", outputFile)
+	fmt.Printf("[+] Output tersimpan di: %s\n", finalOutput)
 }
 
 func main() {

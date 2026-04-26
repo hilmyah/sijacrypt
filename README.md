@@ -1,33 +1,40 @@
 # SIJACRYPT
 
-Platform kriptografi hibrida yang mengimplementasikan algoritma kustom 3 lapis pada bahasa pemrograman Python, Go, Rust, dan C++. Proyek ini bertujuan untuk mendemonstrasikan konsistensi logika kriptografi lintas bahasa pemrograman tingkat sistem.
+Sistem keamanan data hibrida tingkat sistem berbasis Command Line Interface (CLI) dan Graphical User Interface (GUI). Proyek ini mendemonstrasikan konsistensi logika kriptografi lintas platform menggunakan arsitektur enkripsi kustom.
 
-## Arsitektur Algoritma
-Algoritma menggunakan metode Hybrid Cipher dengan tahapan sebagai berikut:
-1. Key Expansion: Menggunakan SHA-256 atau Key Stretching untuk menghasilkan Super Key 32-byte.
-2. Dynamic Position Shifting: Penambahan nilai indeks byte untuk menghancurkan pola frekuensi.
-3. Repeating-Key XOR: Operasi biner akhir menggunakan Super Key.
+## Fitur Utama
+1. Metadata Masking: Menyembunyikan format ekstensi asli file di dalam ciphertext dan memulihkannya secara otomatis saat proses dekripsi. File terenkripsi dipaksa menggunakan ekstensi .sija.
+2. 3-Layer Hybrid Engine: Menggabungkan SHA-256 Key Expansion, Dynamic Position Shifting, dan Repeating-Key XOR pada level byte.
+3. Cross-Language Compatibility: File yang dienkripsi menggunakan satu bahasa dapat didekripsi oleh implementasi bahasa lain secara presisi.
 
 ## Struktur Direktori
-- /cpp : Implementasi menggunakan C++ (Standard 11 atau lebih baru).
-- /go  : Implementasi menggunakan Golang.
-- /py  : Implementasi menggunakan Python 3.
-- /rs  : Implementasi menggunakan Rust.
+- /cpp   : Implementasi C++ (Performa maksimal, manajemen memori manual)
+- /go    : Implementasi Golang (Kompilasi cepat, file biner statis)
+- /py    : Implementasi Python 3 (CLI, eksekusi berbasis interpreter)
+- /rs    : Implementasi Rust (Keamanan memori absolut)
+- gui.py : Implementasi Antarmuka Grafis (Desktop) menggunakan Python (CustomTkinter)
 
-## Instruksi Eksekusi
+## Instruksi Kompilasi (Build)
+Untuk bahasa yang membutuhkan kompilasi menjadi file biner (.exe):
+- Go: go build -o test_go.exe test.go
+- Rust: rustc test.rs -o test_rs.exe
+- C++: g++ test.cpp -o test_cpp.exe -O3
+- GUI (Python): python -m PyInstaller --noconsole --onefile --name "SIJACRYPT_UI" gui.py
 
-### Python
-Ekspresi: python test.py [mode] [input] [output] [password]
-Contoh: python test.py enc test.txt hasil.sija password123
+## Instruksi Penggunaan (CLI)
+Pola argumen terminal: [program] [mode] [input_file] [output_file] [password]
+Catatan: Parameter [output_file] pada implementasi terbaru diabaikan oleh sistem. Output akan otomatis menyesuaikan menjadi .sija (enkripsi) atau format asli (dekripsi).
 
-### Go
-Kompilasi: go build -o test_go.exe test.go
-Eksekusi: ./test_go.exe enc test.txt hasil.sija password123
+### Mode Enkripsi
+Contoh (Rust): ./test_rs.exe enc dokumen.txt dummy password123
+Hasil: dokumen.sija (Format .txt dienkripsi ke dalam metadata header)
 
-### Rust
-Kompilasi: rustc test.rs -o test_rs.exe
-Eksekusi: ./test_rs.exe enc test.txt hasil.sija password123
+### Mode Dekripsi
+Contoh (Rust): ./test_rs.exe dec dokumen.sija dummy password123
+Hasil: dokumen_recovered.txt (Format .txt dipulihkan secara otomatis)
 
-### C++
-Kompilasi: g++ test.cpp -o test_cpp.exe -O3
-Eksekusi: ./test_cpp.exe enc test.txt hasil.sija password123
+## Instruksi Penggunaan (GUI)
+1. Eksekusi file SIJACRYPT_UI.exe yang berada di folder /dist (hasil kompilasi PyInstaller).
+2. Pilih file target melalui antarmuka.
+3. Masukkan kata sandi.
+4. Klik tombol "ENKRIPSI" atau "DEKRIPSI". Program akan otomatis menangani ekstensi file dan menyimpannya di direktori yang sama.

@@ -36,34 +36,38 @@ def decrypt_core(data, key_hash):
 
 def process_file(input_file, output_file, password, mode):
     try:
-        # Membaca isi file secara murni (Binary)
         with open(input_file, 'rb') as f:
             data = f.read()
             
-        # Lapis 1: Buat kunci super dari password user
         key_hash = generate_super_key(password)
         
-        # Penentuan Arah Algoritma
         if mode == 'enc':
-            processed_data = encrypt_core(data, key_hash)
+            ext = os.path.splitext(input_file)[1].encode('utf-8')
+            combined_data = bytes([len(ext)]) + ext + data
+            processed_data = encrypt_core(combined_data, key_hash)
+            
+            final_output = os.path.splitext(input_file)[0] + ".sija"
             print("[+] Proses ENKRIPSI Lapis 3 Berhasil!")
+            
         else:
-            processed_data = decrypt_core(data, key_hash)
+            decrypted_combined = decrypt_core(data, key_hash)
+            
+            ext_len = decrypted_combined[0]
+            original_ext = decrypted_combined[1:1+ext_len].decode('utf-8')
+            processed_data = decrypted_combined[1+ext_len:]
+            
+            final_output = input_file.replace(".sija", f"_recovered{original_ext}")
             print("[+] Proses DEKRIPSI Berhasil, data dikembalikan!")
             
-        # Tulis hasilnya ke file baru (.sija atau .dll)
-        with open(output_file, 'wb') as f:
+        with open(final_output, 'wb') as f:
             f.write(processed_data)
             
-        print(f"[+] Output tersimpan di: {output_file}")
+        print(f"[+] Output tersimpan di: {final_output}")
         
-    except FileNotFoundError:
-        print(f"[-] Error: File '{input_file}' tidak ditemukan di folder ini.")
     except Exception as e:
-        print(f"[-] Terjadi kesalahan sistem: {e}")
+        print(f"[-] Terjadi kesalahan: {e}")
 
 def main():
-    # Menangkap perintah dari CLI Terminal
     args = sys.argv
     
     if len(args) != 5:
