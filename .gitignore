@@ -1,0 +1,22 @@
+# Executables and Binaries
+*.exe
+*.pdb
+*.bin
+*.out
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Rust
+target/
+
+# Result Files
+*.sija
+kembali_*.txt
+
+# IDE Metadata
+.vscode/
+.idea/
+.DS_Store
