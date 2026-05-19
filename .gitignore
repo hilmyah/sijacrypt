@@ -1,27 +1,47 @@
-# Executables and Binaries
-*.exe
+# Build artifacts
+dist/
+build/
+
+# Rust
 *.pdb
-*.bin
+*.rlib
+mfcipher_rs
+mfcipher_rs.exe
+
+# Go
+mfcipher_go
+mfcipher_go.exe
+
+# C / C++
+mfcipher_c
+mfcipher_c.exe
+*.o
 *.out
 
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
+*.pyo
+.venv/
+venv/
+*.egg-info/
+test
 
-# Rust
-target/
+# PyInstaller
+*.spec
+MFCIPHER_UI.exe
+MFCIPHER_UI
 
-# Result Files
-*.sija
-kembali_*.txt
+# File hasil enkripsi / dekripsi (test artifacts)
+*.mfc
+*_recovered.*
 
-# IDE Metadata
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
 .vscode/
 .idea/
-.DS_Store
-
-#PyInstaller
-build/
-dist/
-*.spec
+*.swp
+*.swo
