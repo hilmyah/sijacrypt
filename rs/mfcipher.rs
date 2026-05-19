@@ -1,8 +1,13 @@
-// MFCIPHER - Ternary Huffman Cipher
+// MFCIPHER - Ternary Huffman Cipher dengan Secret Key
 // Alfabet output: 'm' (0), 'f' (1), ' ' (2)
 //
-// Tie-breaking (freq, insertion_order) untuk kompatibilitas lintas bahasa.
-// Penggunaan: ./mfcipher [enc/dec] [input] [output]
+// Alur enkripsi:
+//   1. Build FREQ dari key (FNV-1a + Fisher-Yates)
+//   2. Bangun pohon Huffman terner dari FREQ
+//   3. Encode plaintext -> digit terner (via Huffman)
+//   4. XOR terner: (digit + keystream) mod 3   <- stream cipher
+//
+// Penggunaan: ./mfcipher [enc/dec] [input] [output] [key]
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -10,7 +15,7 @@ use std::env;
 use std::fs;
 use std::process;
 
-const FREQ: [f64; 128] = [
+const FREQ_BASE: [f64; 128] = [
     1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,2.0,5.0,1.0,1.0,2.0,1.0,1.0,
     1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,
     15.0,2.0,3.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,3.0,2.0,3.0,1.0,
@@ -21,7 +26,49 @@ const FREQ: [f64; 128] = [
     4.0,1.0,7.0,8.0,7.0,5.0,3.0,3.0,2.0,3.0,1.0,1.0,1.0,1.0,1.0,1.0,
 ];
 
-// --- Pohon Huffman ---
+// ========== PRNG ==========
+
+fn fnv1a_hash(key: &str) -> u64 {
+    let mut h: u64 = 14695981039346656037;
+    for b in key.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(1099511628211);
+    }
+    h
+}
+
+struct Xorshift64 {
+    state: u64,
+}
+
+impl Xorshift64 {
+    fn new(seed: u64) -> Self {
+        Self { state: if seed == 0 { 1 } else { seed } }
+    }
+    fn next(&mut self) -> u64 {
+        self.state ^= self.state << 13;
+        self.state ^= self.state >> 7;
+        self.state ^= self.state << 17;
+        self.state
+    }
+}
+
+fn build_freq(key: &str) -> [f64; 128] {
+    let mut freq = FREQ_BASE;
+    let mut rng = Xorshift64::new(fnv1a_hash(key));
+    for i in (1..=127usize).rev() {
+        let j = (rng.next() % (i as u64 + 1)) as usize;
+        freq.swap(i, j);
+    }
+    freq
+}
+
+fn ks_init(key: &str) -> Xorshift64 {
+    let seed = fnv1a_hash(key) ^ 0xdeadbeefcafe_u64;
+    Xorshift64::new(if seed == 0 { 0xdeadbeefcafe } else { seed })
+}
+
+// ========== Pohon Huffman ==========
 
 #[derive(Debug)]
 enum NodeKind {
@@ -37,27 +84,34 @@ struct HNode {
     kind:  NodeKind,
 }
 
-// Pembungkus min-heap (BinaryHeap adalah max-heap, dibalik via Ord)
 struct Item(Box<HNode>);
 
-impl PartialEq for Item { fn eq(&self, o: &Self) -> bool { self.0.freq == o.0.freq && self.0.order == o.0.order } }
+impl PartialEq for Item {
+    fn eq(&self, o: &Self) -> bool {
+        self.0.freq == o.0.freq && self.0.order == o.0.order
+    }
+}
 impl Eq for Item {}
-impl PartialOrd for Item { fn partial_cmp(&self, o: &Self) -> Option<Ordering> { Some(self.cmp(o)) } }
+impl PartialOrd for Item {
+    fn partial_cmp(&self, o: &Self) -> Option<Ordering> { Some(self.cmp(o)) }
+}
 impl Ord for Item {
     fn cmp(&self, o: &Self) -> Ordering {
-        // Balik urutan: freq kecil = prioritas tinggi; tie-break: order kecil = prioritas tinggi
         let fc = o.0.freq.partial_cmp(&self.0.freq).unwrap_or(Ordering::Equal);
         if fc != Ordering::Equal { return fc; }
         o.0.order.cmp(&self.0.order)
     }
 }
 
-fn build_tree() -> Box<HNode> {
+fn build_tree(freq: &[f64; 128]) -> Box<HNode> {
     let mut heap = BinaryHeap::<Item>::new();
     let mut counter: i64 = 0;
-
     for i in 0u8..128 {
-        heap.push(Item(Box::new(HNode { freq: FREQ[i as usize], order: counter, kind: NodeKind::Leaf(i) })));
+        heap.push(Item(Box::new(HNode {
+            freq: freq[i as usize],
+            order: counter,
+            kind: NodeKind::Leaf(i),
+        })));
         counter += 1;
     }
     while (heap.len() - 1) % 2 != 0 {
@@ -69,12 +123,12 @@ fn build_tree() -> Box<HNode> {
         let c1 = heap.pop().unwrap().0;
         let c2 = heap.pop().unwrap().0;
         let total = c0.freq + c1.freq + c2.freq;
-        let parent = Box::new(HNode {
-            freq: total, order: counter,
+        heap.push(Item(Box::new(HNode {
+            freq: total,
+            order: counter,
             kind: NodeKind::Internal([c0, c1, c2]),
-        });
+        })));
         counter += 1;
-        heap.push(Item(parent));
     }
     heap.pop().unwrap().0
 }
@@ -93,29 +147,36 @@ fn extract_codes(node: &HNode, path: &mut Vec<u8>, codes: &mut [Vec<u8>; 128]) {
     }
 }
 
-// --- Encoder ---
+// ========== Encoder & Decoder ==========
 
-fn encode(src: &[u8], codes: &[Vec<u8>; 128]) -> Vec<u8> {
+fn encode(src: &[u8], codes: &[Vec<u8>; 128], key: &str) -> Vec<u8> {
+    let mut ks = ks_init(key);
     let mut out = Vec::with_capacity(src.len() * 5);
     for &b in src {
         let sym = if b < 128 { b as usize } else { b'?' as usize };
         for &d in &codes[sym] {
-            out.push(match d { 0 => b'm', 1 => b'f', _ => b' ' });
+            let kd = (ks.next() % 3) as u8;
+            let cd = (d + kd) % 3;
+            out.push(match cd { 0 => b'm', 1 => b'f', _ => b' ' });
         }
     }
     out
 }
 
-// --- Decoder ---
-
-fn decode(src: &[u8], root: &HNode) -> Vec<u8> {
+fn decode(src: &[u8], root: &HNode, key: &str) -> Vec<u8> {
+    let mut ks  = ks_init(key);
     let mut out = Vec::with_capacity(src.len() / 5);
     let mut cur = root;
     for (i, &b) in src.iter().enumerate() {
-        let d: usize = match b { b'm' => 0, b'f' => 1, b' ' => 2, _ => continue };
+        let raw: u64 = match b { b'm' => 0, b'f' => 1, b' ' => 2, _ => continue };
+        let kd  = ks.next() % 3;
+        let d   = ((raw + 3 - kd) % 3) as usize;
         match &cur.kind {
             NodeKind::Internal(children) => { cur = &children[d]; }
-            _ => { eprintln!("[-] Data korup pada posisi {}.", i); return out; }
+            _ => {
+                eprintln!("[-] Data korup pada posisi {}.", i);
+                return out;
+            }
         }
         if let NodeKind::Leaf(sym) = cur.kind {
             out.push(sym);
@@ -125,30 +186,37 @@ fn decode(src: &[u8], root: &HNode) -> Vec<u8> {
     out
 }
 
-// --- Entry Point ---
+// ========== Entry Point ==========
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() != 4 {
-        eprintln!("MFCIPHER - Ternary Huffman Cipher\nPenggunaan: {} [enc/dec] [input] [output]", args[0]);
+    if args.len() != 5 {
+        eprintln!(
+            "MFCIPHER - Ternary Huffman Cipher\nPenggunaan: {} [enc/dec] [input] [output] [key]",
+            args[0]
+        );
         process::exit(1);
     }
-    let (mode, in_path, out_path) = (&args[1], &args[2], &args[3]);
+    let (mode, in_path, out_path, key) = (&args[1], &args[2], &args[3], &args[4]);
     if mode != "enc" && mode != "dec" {
-        eprintln!("[-] Mode tidak valid. Gunakan 'enc' atau 'dec'."); process::exit(1);
+        eprintln!("[-] Mode tidak valid. Gunakan 'enc' atau 'dec'.");
+        process::exit(1);
     }
 
     let data = fs::read(in_path).expect("[-] Gagal membaca file input.");
-    let root  = build_tree();
+    let freq  = build_freq(key);
+    let root  = build_tree(&freq);
     let mut codes: [Vec<u8>; 128] = std::array::from_fn(|_| Vec::new());
     extract_codes(&root, &mut Vec::new(), &mut codes);
 
     let result = if mode == "enc" {
-        let r = encode(&data, &codes);
-        eprintln!("[+] Enkripsi selesai -> {}", out_path); r
+        let r = encode(&data, &codes, key);
+        eprintln!("[+] Enkripsi selesai -> {}", out_path);
+        r
     } else {
-        let r = decode(&data, &root);
-        eprintln!("[+] Dekripsi selesai -> {}", out_path); r
+        let r = decode(&data, &root, key);
+        eprintln!("[+] Dekripsi selesai -> {}", out_path);
+        r
     };
 
     fs::write(out_path, &result).expect("[-] Gagal menulis file output.");
