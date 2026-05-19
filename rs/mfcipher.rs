@@ -2,10 +2,11 @@
 // Alfabet output: 'm' (0), 'f' (1), ' ' (2)
 //
 // Alur enkripsi:
-//   1. Build FREQ dari key (FNV-1a + Fisher-Yates)
+//   1. Build FREQ dari key (FNV-1a + Fisher-Yates) untuk 256 simbol byte
 //   2. Bangun pohon Huffman terner dari FREQ
-//   3. Encode plaintext -> digit terner (via Huffman)
-//   4. XOR terner: (digit + keystream) mod 3   <- stream cipher
+//   3. Prepend header (magic + ekstensi asli) ke plaintext
+//   4. Encode byte stream -> digit terner (via Huffman)
+//   5. XOR terner: (digit + keystream) mod 3   <- stream cipher
 //
 // Penggunaan: ./mfcipher [enc/dec] [input] [output] [key]
 
@@ -13,18 +14,41 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::env;
 use std::fs;
+use std::path::Path;
 use std::process;
 
-const FREQ_BASE: [f64; 128] = [
+// Frekuensi dasar untuk 256 simbol byte
+const FREQ_BASE: [f64; 256] = [
+    /* 0x00-0x0F */
     1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,2.0,5.0,1.0,1.0,2.0,1.0,1.0,
+    /* 0x10-0x1F */
     1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,
+    /* 0x20-0x2F */
     15.0,2.0,3.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,3.0,2.0,3.0,1.0,
+    /* 0x30-0x3F */
     4.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0,2.0,2.0,1.0,1.0,1.0,1.0,
+    /* 0x40-0x4F */
     1.0,6.0,3.0,4.0,4.0,7.0,3.0,3.0,4.0,6.0,2.0,2.0,4.0,4.0,6.0,6.0,
+    /* 0x50-0x5F */
     4.0,1.0,5.0,6.0,5.0,4.0,3.0,3.0,2.0,3.0,1.0,1.0,1.0,1.0,1.0,1.0,
+    /* 0x60-0x6F */
     1.0,9.0,2.0,5.0,6.0,12.0,3.0,3.0,5.0,9.0,1.0,1.0,6.0,4.0,8.0,8.0,
+    /* 0x70-0x7F */
     4.0,1.0,7.0,8.0,7.0,5.0,3.0,3.0,2.0,3.0,1.0,1.0,1.0,1.0,1.0,1.0,
+    /* 0x80-0xFF: byte biner, distribusi flat */
+    2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,
+    2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,
+    2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,
+    2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,
+    2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,
+    2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,
+    2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,
+    2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,
 ];
+
+const HEADER_MAGIC: &[u8; 4] = b"MFCI";
+const HEADER_VERSION: u8 = 1;
+
 
 // ========== PRNG ==========
 
@@ -53,10 +77,10 @@ impl Xorshift64 {
     }
 }
 
-fn build_freq(key: &str) -> [f64; 128] {
+fn build_freq(key: &str) -> [f64; 256] {
     let mut freq = FREQ_BASE;
     let mut rng = Xorshift64::new(fnv1a_hash(key));
-    for i in (1..=127usize).rev() {
+    for i in (1..=255usize).rev() {
         let j = (rng.next() % (i as u64 + 1)) as usize;
         freq.swap(i, j);
     }
@@ -68,11 +92,12 @@ fn ks_init(key: &str) -> Xorshift64 {
     Xorshift64::new(if seed == 0 { 0xdeadbeefcafe } else { seed })
 }
 
+
 // ========== Pohon Huffman ==========
 
 #[derive(Debug)]
 enum NodeKind {
-    Leaf(u8),
+    Leaf(usize),
     Internal([Box<HNode>; 3]),
     Dummy,
 }
@@ -103,12 +128,12 @@ impl Ord for Item {
     }
 }
 
-fn build_tree(freq: &[f64; 128]) -> Box<HNode> {
+fn build_tree(freq: &[f64; 256]) -> Box<HNode> {
     let mut heap = BinaryHeap::<Item>::new();
     let mut counter: i64 = 0;
-    for i in 0u8..128 {
+    for i in 0usize..256 {
         heap.push(Item(Box::new(HNode {
-            freq: freq[i as usize],
+            freq: freq[i],
             order: counter,
             kind: NodeKind::Leaf(i),
         })));
@@ -133,9 +158,9 @@ fn build_tree(freq: &[f64; 128]) -> Box<HNode> {
     heap.pop().unwrap().0
 }
 
-fn extract_codes(node: &HNode, path: &mut Vec<u8>, codes: &mut [Vec<u8>; 128]) {
+fn extract_codes(node: &HNode, path: &mut Vec<u8>, codes: &mut [Vec<u8>; 256]) {
     match &node.kind {
-        NodeKind::Leaf(sym) => { codes[*sym as usize] = path.clone(); }
+        NodeKind::Leaf(sym) => { codes[*sym] = path.clone(); }
         NodeKind::Internal(children) => {
             for (d, child) in children.iter().enumerate() {
                 path.push(d as u8);
@@ -147,14 +172,42 @@ fn extract_codes(node: &HNode, path: &mut Vec<u8>, codes: &mut [Vec<u8>; 128]) {
     }
 }
 
+
+// ========== Header ==========
+
+fn build_header(ext: &str) -> Vec<u8> {
+    let ext = ext.trim_start_matches('.').to_lowercase();
+    let ext_bytes = ext.as_bytes();
+    let ext_len = ext_bytes.len().min(31);
+    let mut hdr = Vec::with_capacity(6 + ext_len);
+    hdr.extend_from_slice(HEADER_MAGIC);
+    hdr.push(HEADER_VERSION);
+    hdr.push(ext_len as u8);
+    hdr.extend_from_slice(&ext_bytes[..ext_len]);
+    hdr
+}
+
+fn parse_header(data: &[u8]) -> (String, &[u8]) {
+    if data.len() < 6 || &data[0..4] != HEADER_MAGIC || data[4] != HEADER_VERSION {
+        return (String::new(), data);
+    }
+    let ext_len = data[5] as usize;
+    if data.len() < 6 + ext_len {
+        return (String::new(), data);
+    }
+    let ext     = String::from_utf8_lossy(&data[6..6 + ext_len]).into_owned();
+    let payload = &data[6 + ext_len..];
+    (ext, payload)
+}
+
+
 // ========== Encoder & Decoder ==========
 
-fn encode(src: &[u8], codes: &[Vec<u8>; 128], key: &str) -> Vec<u8> {
+fn encode(src: &[u8], codes: &[Vec<u8>; 256], key: &str) -> Vec<u8> {
     let mut ks = ks_init(key);
     let mut out = Vec::with_capacity(src.len() * 5);
     for &b in src {
-        let sym = if b < 128 { b as usize } else { b'?' as usize };
-        for &d in &codes[sym] {
+        for &d in &codes[b as usize] {
             let kd = (ks.next() % 3) as u8;
             let cd = (d + kd) % 3;
             out.push(match cd { 0 => b'm', 1 => b'f', _ => b' ' });
@@ -165,7 +218,7 @@ fn encode(src: &[u8], codes: &[Vec<u8>; 128], key: &str) -> Vec<u8> {
 
 fn decode(src: &[u8], root: &HNode, key: &str) -> Vec<u8> {
     let mut ks  = ks_init(key);
-    let mut out = Vec::with_capacity(src.len() / 5);
+    let mut out = Vec::with_capacity(src.len() / 4);
     let mut cur = root;
     for (i, &b) in src.iter().enumerate() {
         let raw: u64 = match b { b'm' => 0, b'f' => 1, b' ' => 2, _ => continue };
@@ -179,12 +232,13 @@ fn decode(src: &[u8], root: &HNode, key: &str) -> Vec<u8> {
             }
         }
         if let NodeKind::Leaf(sym) = cur.kind {
-            out.push(sym);
+            out.push(sym as u8);
             cur = root;
         }
     }
     out
 }
+
 
 // ========== Entry Point ==========
 
@@ -206,18 +260,29 @@ fn main() {
     let data = fs::read(in_path).expect("[-] Gagal membaca file input.");
     let freq  = build_freq(key);
     let root  = build_tree(&freq);
-    let mut codes: [Vec<u8>; 128] = std::array::from_fn(|_| Vec::new());
+    let mut codes: [Vec<u8>; 256] = std::array::from_fn(|_| Vec::new());
     extract_codes(&root, &mut Vec::new(), &mut codes);
 
-    let result = if mode == "enc" {
-        let r = encode(&data, &codes, key);
+    let (result, final_out_path) = if mode == "enc" {
+        let ext     = Path::new(in_path).extension()
+                          .and_then(|e| e.to_str()).unwrap_or("");
+        let mut payload = build_header(ext);
+        payload.extend_from_slice(&data);
+        let r = encode(&payload, &codes, key);
         eprintln!("[+] Enkripsi selesai -> {}", out_path);
-        r
+        (r, out_path.clone())
     } else {
-        let r = decode(&data, &root, key);
-        eprintln!("[+] Dekripsi selesai -> {}", out_path);
-        r
+        let raw          = decode(&data, &root, key);
+        let (ext, payload) = parse_header(&raw);
+        let final_path   = if !ext.is_empty() && Path::new(out_path).extension().is_none() {
+            eprintln!("[+] Ekstensi asli dipulihkan: .{}", ext);
+            format!("{}.{}", out_path, ext)
+        } else {
+            out_path.clone()
+        };
+        eprintln!("[+] Dekripsi selesai -> {}", final_path);
+        (payload.to_vec(), final_path)
     };
 
-    fs::write(out_path, &result).expect("[-] Gagal menulis file output.");
+    fs::write(&final_out_path, &result).expect("[-] Gagal menulis file output.");
 }
