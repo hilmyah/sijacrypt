@@ -1,197 +1,285 @@
 <div align="center">
-  <h1>MFCIPHER (Sijacrypt)</h1>
-  <p>Sistem penyandian berkas berbasis Ternary Huffman Coding dengan alfabet keluaran terbatas dan lapisan Ternary Stream Cipher.</p>
+  <h1>MFCIPHER</h1>
+  <p>Sistem penyandian berkas berbasis Ternary Huffman Coding dengan alfabet keluaran terbatas pada tiga karakter dan lapisan Ternary Stream Cipher.</p>
 </div>
 
-![Rust](https://img.shields.io/badge/Rust-1.x-orange?logo=rust&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3.x-blue?logo=python&logoColor=white)
-![Go](https://img.shields.io/badge/Go-1.x-00ADD8?logo=go&logoColor=white)
-![C](https://img.shields.io/badge/C-C99-A8B9CC?logo=c&logoColor=white)
+<p align="center">
+  <img src="https://img.shields.io/badge/Rust-%3E%3D1.65-CE422B?logo=rust&logoColor=white" alt="Rust">
+  <img src="https://img.shields.io/badge/Python-%3E%3D3.8-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Go-%3E%3D1.19-00ADD8?logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/C-C99-A8B9CC?logo=c&logoColor=white" alt="C">
+</p>
+
+---
+
+MFCIPHER adalah sistem penyandian berkas yang mengompresi dan mengenkripsi seluruh jenis berkas menggunakan Ternary Huffman Coding dengan alfabet keluaran yang dibatasi pada tiga karakter: `m`, `f`, dan spasi (` `). Sistem dilengkapi lapisan Ternary Stream Cipher yang diaplikasikan setelah proses Huffman encoding untuk menghilangkan kebocoran statistik dari ciphertext.
+
+Algoritma dirancang dengan pendekatan deterministik murni sehingga berkas yang dienkripsi menggunakan implementasi satu bahasa dapat didekripsi oleh implementasi bahasa lain selama kunci yang digunakan sama. Tersedia empat implementasi bahasa (C, Go, Python, Rust) serta antarmuka grafis berbasis Python.
+
+## Daftar Isi
+
+- [Fitur](#fitur)
+- [Konsep dan Arsitektur](#konsep-dan-arsitektur)
+- [Struktur Repository](#struktur-repository)
+- [Prasyarat](#prasyarat)
+- [Instalasi](#instalasi)
+- [Manajemen dan Operasional](#manajemen-dan-operasional)
+- [Catatan](#catatan)
+- [Lisensi](#lisensi)
+
+---
 
 ## Fitur
 
 | Fitur | Deskripsi |
 | --- | --- |
-| Ternary Huffman Coding | Mengompresi dan memetakan ruang byte data menjadi struktur pohon terner (3 cabang) menggunakan alfabet khusus. |
-| Batasan Alfabet | Membatasi elemen cipher teks hanya pada tiga karakter statis yaitu `m`, `f`, dan karakter spasi. |
-| Ternary Stream Cipher | Lapisan enkripsi tambahan setelah proses encoding untuk mengacak distribusi frekuensi karakter secara deterministik. |
-| Pemulihan Ekstensi | Menyimpan metadata ekstensi asli secara aman di dalam header terenkripsi untuk proses rekonstruksi berkas otomatis. |
-| Kompatibilitas Lintas Bahasa | Implementasi algoritma menghasilkan bit biner yang identik di seluruh varian bahasa pemrograman (C, Go, Python, Rust). |
+| Ternary Huffman Coding | Mengompresi dan memetakan ruang byte data menjadi struktur pohon terner (3 cabang) menggunakan alfabet khusus. Pohon dibangun untuk seluruh ruang byte (0-255) sehingga semua format berkas didukung secara native. |
+| Batasan Alfabet | Membatasi elemen ciphertext hanya pada tiga karakter statis: `m`, `f`, dan karakter spasi (` `). |
+| Ternary Stream Cipher | Lapisan enkripsi tambahan setelah proses encoding untuk mengacak distribusi frekuensi karakter secara deterministik, menghilangkan pola statistik pada ciphertext. |
+| Pemulihan Ekstensi | Menyimpan metadata ekstensi asli secara aman di dalam header terenkripsi untuk rekonstruksi berkas otomatis saat dekripsi. |
+| Kompatibilitas Lintas Bahasa | Implementasi C, Go, Python, dan Rust menghasilkan output bit-identik; berkas yang dienkripsi oleh satu implementasi dapat didekripsi oleh implementasi bahasa lain selama kunci yang digunakan sama. |
+| Antarmuka GUI | Antarmuka grafis berbasis CustomTkinter untuk operasi enkripsi dan dekripsi tanpa menggunakan terminal. |
+
+### Format yang Didukung
+
+Sistem beroperasi pada level byte mentah, sehingga mendukung seluruh format berkas tanpa batasan:
+
+| Kategori | Contoh Format |
+| --- | --- |
+| Dokumen | `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.odt`, `.txt` |
+| Gambar | `.jpg`, `.png`, `.gif`, `.bmp`, `.webp`, `.tiff` |
+| Audio | `.mp3`, `.flac`, `.wav`, `.aac`, `.ogg` |
+| Video | `.mp4`, `.mkv`, `.avi`, `.mov`, `.webm` |
+| Arsip | `.zip`, `.tar`, `.gz`, `.7z`, `.rar` |
+| Lainnya | Semua format biner atau teks |
+
+---
 
 ## Konsep dan Arsitektur
 
 ### Ternary Huffman Coding
 
-Huffman Coding konvensional menggunakan basis biner (2 cabang). Proyek ini memodifikasi arsitektur pohon menjadi berbasis terner (3 cabang) untuk mengakomodasi pembatasan alfabet keluaran. Setiap cabang merepresentasikan satu karakter fisik:
+Huffman Coding konvensional menggunakan basis biner (2 cabang). MFCIPHER memodifikasi arsitektur pohon menjadi berbasis terner (3 cabang) untuk mengakomodasi pembatasan alfabet keluaran. Setiap cabang merepresentasikan satu karakter fisik:
 
-| Digit Terner | Karakter Alfabet Output |
-| :---: | --- |
+| Digit Terner | Karakter Output |
+| :---: | :---: |
 | 0 | `m` |
 | 1 | `f` |
-| 2 | Karakter Spasi (` `) |
-
-Struktur pohon dibangun secara dinamis mencakup seluruh ruang byte (indeks 0 hingga 255), menjamin seluruh jenis tipe berkas biner dapat dipetakan tanpa kegagalan transfer data.
+| 2 | spasi (` `) |
 
 ### Alur Enkripsi
 
-Proses enkripsi mengubah berkas mentah menjadi format sandi terner melalui tahapan berikut:
-
-```text
-Berkas Input (Format Bebas)
+```
+Berkas Input (format apa saja)
     |
     v
-[1] Inisialisasi Kunci (Key)
-    FNV-1a(key) --> Seed Utama --> xorshift64 --> Fisher-Yates Shuffle pada tabel FREQ[0..255]
+[1] Build FREQ dari key
+    FNV-1a(key) --> seed --> xorshift64 --> Fisher-Yates shuffle pada FREQ[0..255]
     |
     v
-[2] Konstruksi Pohon
-    Membangun struktur pohon Huffman terner berdasarkan nilai FREQ yang telah diacak
+[2] Bangun pohon Huffman terner dari FREQ yang telah diacak
     |
     v
-[3] Penyusunan Header
-    Menyusun blok data: MAGIC(4 byte) | VERSION(1 byte) | EXT_LEN(1 byte) | EXT(n byte)
+[3] Prepend header ke plaintext
+    MAGIC(4) | VERSION(1) | EXT_LEN(1) | EXT(n)   <- menyimpan ekstensi asli
     |
     v
-[4] Proses Encoding
-    Melakukan encode Huffman Terner pada gabungan struktur Header dan Plaintext berkas
+[4] Huffman Encode: setiap byte (header + berkas) --> urutan digit terner {0, 1, 2}
     |
     v
-[5] Lapisan Stream Cipher Terner
-    Menghasilkan keystream terner (0, 1, 2) menggunakan generator xorshift64 (Seed Kedua)
-    Eksekusi operasi matematika terner: c = (p + k) mod 3
+[5] Ternary Stream Cipher: setiap digit d_i --> (d_i + k_i) mod 3
+    k_i adalah digit keystream dari xorshift64 dengan seed terpisah
     |
     v
-[6] Pemetaan Alfabet
-    Mengonversi digit hasil cipher terner menjadi karakter fisik ('m', 'f', ' ')
-    |
-    v
-Berkas Output (.mfc)
-
+Ciphertext: string karakter {m, f, ' '} --> disimpan sebagai berkas .mfc
 ```
 
 ### Alur Dekripsi
 
-Proses dekripsi merupakan kebalikan matematis dari alur enkripsi untuk memulihkan data asal:
+Alur dekripsi adalah kebalikan matematis dari alur enkripsi:
 
-1. Membaca berkas biner `.mfc` lalu menerjemahkan kembali susunan alfabet teks menjadi deret digit terner (0, 1, 2).
-2. Mengeksekusi dekripsi lapisan stream cipher terner untuk memulihkan bitstream asli menggunakan operasi inversi modular: `p = (c - k + 3) mod 3`.
-3. Membangun ulang struktur pohon Huffman terner yang identik menggunakan penurunan nilai *seed* dari parameter kunci (*key*) yang sama.
-4. Melakukan operasi *decoding* dari deret terner kembali menuju bentuk byte data mentah.
-5. Memisahkan struktur blok header, membaca metadata ukuran dan nama ekstensi asli, kemudian menuliskan kembali berkas utuh ke media penyimpanan dengan sufiks `_recovered`.
+1. Baca berkas `.mfc`, terjemahkan susunan karakter alfabet kembali menjadi deret digit terner (0, 1, 2).
+2. Dekripsi lapisan stream cipher menggunakan operasi inversi modular: `huffman_digit = (cipherdigit - keystream_digit + 3) mod 3`.
+3. Bangun ulang pohon Huffman terner yang identik menggunakan kunci yang sama.
+4. Lakukan decoding deret terner kembali menuju byte data mentah.
+5. Pisahkan blok header, baca metadata ekstensi asli, tulis berkas output dengan sufiks `_recovered`.
 
-## Format yang Didukung
+### Format Header
 
-Sistem beroperasi pada level pemrosesan byte mentah (raw bytes), sehingga mampu memproses seluruh format berkas tanpa dependensi eksternal:
+Header disisipkan di awal plaintext sebelum enkripsi sehingga ikut terenkripsi bersama data:
 
-| Kategori | Contoh Format Ekstensi Berkas |
-| --- | --- |
-| Dokumen | .pdf, .docx, .xlsx, .pptx, .odt, .txt |
-| Gambar | .jpg, .png, .gif, .bmp, .webp, .tiff |
-| Audio | .mp3, .flac, .wav, .aac, .ogg |
-| Video | .mp4, .mkv, .avi, .mov, .webm |
-| Arsip | .zip, .tar, .gz, .7z, .rar |
+| Offset | Panjang | Isi |
+| --- | --- | --- |
+| 0 | 4 byte | Magic: `MFCI` |
+| 4 | 1 byte | Versi: `0x01` |
+| 5 | 1 byte | Panjang ekstensi (0-31 byte) |
+| 6 | n byte | Ekstensi asli dalam ASCII lowercase tanpa titik |
 
-## Kompatibilitas Lintas Bahasa
+Jika header tidak ditemukan saat dekripsi (kompatibilitas ke belakang), output tetap ditulis tanpa ekstensi tambahan.
 
-Algoritma dirancang dengan pendekatan deterministik murni. Komponen FNV-1a, xorshift64, Fisher-Yates shuffle, dan aritmatika modular terner diimplementasikan secara matematis serupa di setiap bahasa pemrograman. Berkas yang dikunci menggunakan skrip Python dapat dibuka kembali secara valid menggunakan program berbasis Rust, C, maupun Go selama parameter kunci (*key*) yang dimasukkan tepat sama.
+### Mekanisme Secret Key
+
+Secret key mengontrol dua komponen yang saling independen:
+
+**Komponen 1 - Shuffle FREQ (mengacak struktur pohon)**
+
+```
+key --> FNV-1a --> seed_shuffle --> xorshift64 --> Fisher-Yates pada FREQ[0..255]
+```
+
+Mengubah pemetaan simbol ke kode Huffman. Tanpa kunci yang benar, pohon yang dibangun berbeda sehingga dekripsi menghasilkan output yang salah.
+
+**Komponen 2 - Ternary Stream Cipher (menghancurkan pola statistik)**
+
+```
+key --> FNV-1a --> seed_shuffle XOR 0xDEADBEEFCAFE --> xorshift64 --> keystream
+```
+
+Seed keystream dibuat berbeda dari seed shuffle menggunakan operasi XOR dengan konstanta tetap. Setiap digit terner hasil Huffman dimodifikasi:
+
+```
+enkripsi : cipherdigit    = (huffman_digit + keystream_digit) mod 3
+dekripsi : huffman_digit  = (cipherdigit  - keystream_digit + 3) mod 3
+```
+
+### Komponen Teknis
+
+| Komponen | Pilihan | Alasan |
+| --- | --- | --- |
+| Hash fungsi | FNV-1a 64-bit | Deterministik, sederhana, mudah diimplementasikan identik di semua bahasa; aritmetika modulo 2^64 eksplisit. |
+| PRNG | xorshift64 (shift: 13, 7, 17) | Periode panjang, bebas dependensi eksternal, hasil identik lintas platform. |
+| Shuffle | Fisher-Yates (iterasi 255 turun ke 1) | Menghasilkan permutasi seragam dan deterministik dengan seed yang sama. |
+| Stream cipher | Ternary XOR modulo 3 | Mempertahankan alfabet output tiga karakter sekaligus menghancurkan pola statistik. |
+| Ruang simbol | 256 byte (0x00-0xFF) | Mendukung semua format berkas secara native tanpa dependensi eksternal. |
+
+---
+
+## Struktur Repository
+
+```
+mfcipher/
+├── mfcipher.c        Implementasi C.
+├── mfcipher.go       Implementasi Go.
+├── mfcipher.rs       Implementasi Rust.
+├── mfcipher.py       Implementasi Python (CLI).
+├── gui.py            Implementasi Python (GUI, CustomTkinter).
+└── README.md
+```
+
+---
 
 ## Prasyarat
 
-| Komponen Bahasa | Versi Minimal | Keterangan |
+Setiap implementasi bahasa bersifat independen; hanya instal komponen yang sesuai dengan implementasi yang akan digunakan.
+
+| Komponen | Versi Minimal | Keterangan |
 | --- | --- | --- |
-| Python | >= 3.8 | Diperlukan untuk modul CLI dan visualisasi GUI Tkinter |
-| Rust | >= 1.65 (Edition 2021) | Kebutuhan kompilasi kode native performa tinggi |
-| Go | >= 1.19 | Kebutuhan kompilasi paket dependensi Go |
-| C Compiler | GCC / Clang (C99) | Kompilasi dependensi tingkat rendah |
+| Python | >= 3.8 | Diperlukan untuk CLI Python dan antarmuka GUI. |
+| Rust | >= 1.65 (Edition 2021) | Diperlukan untuk kompilasi implementasi Rust. |
+| Go | >= 1.19 | Diperlukan untuk kompilasi implementasi Go. |
+| C Compiler | GCC / Clang (C99) | Diperlukan untuk kompilasi implementasi C. |
+
+---
 
 ## Instalasi
 
-Kloning repositori kerja ke dalam komputer lokal:
-
 ```bash
-git clone [https://github.com/hilmyah/sijacrypt.git](https://github.com/hilmyah/sijacrypt.git)
+git clone https://github.com/hilmyah/sijacrypt.git
 cd sijacrypt
-
 ```
 
-## Struktur Direktori
-
-| Direktori atau File | Fungsi |
-| --- | --- |
-| `c/` | Implementasi inti algoritma menggunakan bahasa C. |
-| `go/` | Implementasi modul enkripsi dan dekripsi menggunakan bahasa Go. |
-| `py/` | Implementasi skrip pemrosesan berbasis bahasa Python. |
-| `rs/` | Source code performa tinggi menggunakan bahasa Rust. |
-| `gui.py` | Aplikasi antarmuka grafis desktop (GUI) berbasis Tkinter untuk mempermudah operasional pengguna. |
+---
 
 ## Manajemen dan Operasional
 
-### 1. Operasional Menggunakan Python (CLI & GUI)
+### Kompilasi
 
-Menjalankan aplikasi berbasis grafis desktop:
-
-```bash
-python gui.py
-
-```
-
-Menjalankan pemrosesan via terminal menggunakan skrip Python internal:
+**C**
 
 ```bash
-cd py
-# Proses Enkripsi
-python mfcipher.py encrypt dokumen.txt "kuncirahasia"
-# Proses Dekripsi
-python mfcipher.py decrypt dokumen.txt.mfc "kuncirahasia"
-
+gcc mfcipher.c -o mfcipher_c -O2
 ```
 
-### 2. Operasional Menggunakan Rust
-
-Masuk ke dalam folder spesifik, lakukan kompilasi rilis, lalu eksekusi berkas biner:
+**Go**
 
 ```bash
-cd rs
-rustc -O mfcipher.rs
-
-# Proses Enkripsi
-./mfcipher encrypt dokumen.txt "kuncirahasia"
-# Proses Dekripsi
-./mfcipher decrypt dokumen.txt.mfc "kuncirahasia"
-
+go build -o mfcipher_go mfcipher.go
 ```
 
-### 3. Operasional Menggunakan Go
-
-Eksekusi langsung menggunakan perkakas runtime Go:
+**Rust**
 
 ```bash
-cd go
-# Proses Enkripsi
-go run mfcipher.go encrypt dokumen.txt "kuncirahasia"
-# Proses Dekripsi
-go run mfcipher.go decrypt dokumen.txt.mfc "kuncirahasia"
-
+rustc mfcipher.rs -o mfcipher_rs -C opt-level=2
 ```
 
-### 4. Operasional Menggunakan Bahasa C
+**Python**
 
-Lakukan kompilasi menggunakan kompiler GCC dengan standar C99:
+Tidak memerlukan kompilasi. Untuk mengemas GUI menjadi executable mandiri:
 
 ```bash
-cd c
-gcc -O3 mfcipher.c -o mfcipher
-
-# Proses Enkripsi
-./mfcipher encrypt dokumen.txt "kuncirahasia"
-# Proses Dekripsi
-./mfcipher decrypt dokumen.txt.mfc "kuncirahasia"
-
+pip install customtkinter pyinstaller
+python -m PyInstaller --noconsole --onefile --name "MFCIPHER_UI" gui.py
 ```
 
-## Catatan Penting
+### Penggunaan CLI
 
-* **Volume Ukuran File**: Berkas luaran (.mfc) akan memiliki ukuran fisik lebih besar dibandingkan berkas asal. Hal ini terjadi karena representasi satu byte Plaintext dipecah menjadi deretan karakter teks alfabet terpisah guna memenuhi batasan arsitektur tiga karakter luaran.
-* **Ketiadaan Data Padding**: Berkas sandi luaran bersifat presisi tanpa penambahan byte kosong (zero-padding). Seluruh data merupakan representasi Ciphertext murni beserta informasi blok header yang melekat di bagian awal.
-* **Separasi Nilai Seed**: Nilai awal generator (*seed*) untuk kebutuhan pengacakan pohon (*shuffle*) diatur berbeda secara eksplisit dengan nilai generator untuk kebutuhan *keystream* guna meminimalkan korelasi pola distribusi statistik data sandi.
-* **Proteksi Metadata**: Blok informasi header ikut diproses menggunakan lapisan enkripsi *stream cipher* yang sama, mengamankan ekstensi asli dari analisis struktur berkas pihak luar.
+Pola argumen:
+
+```
+[program] [enc/dec] [input] [output] [key]
+```
+
+Argumen `output` pada mode dekripsi adalah nama dasar berkas; ekstensi asli diterapkan secara otomatis dari header yang tersimpan di dalam ciphertext. Jika nama output sudah memiliki ekstensi, ekstensi tersebut dipertahankan.
+
+**Enkripsi**
+
+```bash
+./mfcipher_c  enc dokumen.pdf  dokumen.mfc  "kunci-rahasia"
+./mfcipher_go enc foto.jpg     foto.mfc     "kunci-rahasia"
+./mfcipher_rs enc video.mp4    video.mfc    "kunci-rahasia"
+python mfcipher.py enc arsip.docx arsip.mfc "kunci-rahasia"
+```
+
+**Dekripsi**
+
+```bash
+./mfcipher_c  dec dokumen.mfc dokumen_recovered  "kunci-rahasia"
+# -> dokumen_recovered.pdf
+
+./mfcipher_go dec foto.mfc    foto_recovered     "kunci-rahasia"
+# -> foto_recovered.jpg
+
+./mfcipher_rs dec video.mfc   video_recovered    "kunci-rahasia"
+# -> video_recovered.mp4
+
+python mfcipher.py dec arsip.mfc arsip_recovered "kunci-rahasia"
+# -> arsip_recovered.docx
+```
+
+### Penggunaan GUI
+
+Jalankan `python gui.py` atau file `MFCIPHER_UI` hasil kompilasi PyInstaller. Pilih berkas target, masukkan secret key pada kolom yang tersedia, lalu klik **ENKRIPSI** atau **DEKRIPSI**.
+
+- Enkripsi: output disimpan di direktori yang sama dengan ekstensi `.mfc`.
+- Dekripsi: output disimpan di direktori yang sama dengan sufiks `_recovered` dan ekstensi asli yang dipulihkan secara otomatis.
+
+---
+
+## Catatan
+
+- **Ukuran berkas output**: Berkas `.mfc` akan memiliki ukuran lebih besar dibandingkan berkas asal karena satu byte plaintext direpresentasikan sebagai beberapa karakter teks untuk memenuhi batasan tiga karakter alfabet. Ini adalah konsekuensi yang disengaja dari desain sistem.
+- **Tanpa padding**: Berkas output tidak memiliki byte kosong tambahan. Seluruh konten adalah ciphertext murni ditambah blok header terenkripsi di bagian awal.
+- **Separasi seed**: Seed untuk pengacakan pohon (shuffle) dan seed untuk keystream stream cipher sengaja dibuat berbeda menggunakan operasi XOR dengan konstanta tetap untuk meminimalkan korelasi pola statistik antara kedua komponen.
+- **Proteksi metadata**: Blok header ikut diproses menggunakan lapisan stream cipher yang sama sehingga informasi ekstensi asli tidak dapat dibaca dari ciphertext tanpa kunci yang benar.
+
+---
+
+## Lisensi
+
+Repository ini tidak memiliki berkas `LICENSE`. Status lisensi belum dideklarasikan secara resmi.
+
+---
+
+<div align="center">
+  <sub>MFCIPHER (Sijacrypt) - Sistem Penyandian Berkas Ternary</sub>
+</div>
